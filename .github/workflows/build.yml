@@ -30,7 +30,7 @@ jobs:
             app.py
 
       - name: Upload EXE
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: 口播去气口工具-Windows
           path: dist/口播去气口工具/
