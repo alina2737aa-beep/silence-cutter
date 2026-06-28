@@ -1,0 +1,36 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install customtkinter tkinterdnd2 pyinstaller
+
+      - name: Build EXE
+        run: |
+          pyinstaller --noconfirm --onedir --windowed --name "口播去气口工具" `
+            --add-data "$((python -c 'import customtkinter,os;print(os.path.dirname(customtkinter.__file__))'));customtkinter" `
+            --add-data "$((python -c 'import tkinterdnd2,os;print(os.path.dirname(tkinterdnd2.__file__))'));tkinterdnd2" `
+            --hidden-import customtkinter `
+            --hidden-import tkinterdnd2 `
+            --hidden-import tkinter `
+            app.py
+
+      - name: Upload EXE
+        uses: actions/upload-artifact@v3
+        with:
+          name: 口播去气口工具-Windows
+          path: dist/口播去气口工具/
