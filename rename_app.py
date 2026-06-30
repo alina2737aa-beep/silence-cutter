@@ -4,8 +4,13 @@
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import filedialog, messagebox
-import platform, re
+import platform, re, subprocess, os
 from pathlib import Path
+try:
+    from tkinterdnd2 import TkinterDnD, DND_FILES
+    HAS_DND = True
+except ImportError:
+    HAS_DND = False
 
 ctk.set_appearance_mode("light")
 ctk.set_default_color_theme("blue")
@@ -28,7 +33,7 @@ def natural_sort_key(filename):
     return [int(p) if p.isdigit() else p.lower() for p in parts]
 
 
-class App(ctk.CTk):
+class App(TkinterDnD.Tk if HAS_DND else ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("批量重命名工具")
@@ -63,7 +68,10 @@ class App(ctk.CTk):
         ctk.CTkButton(top_row, text="📂 选择文件夹", height=34,
                       fg_color=ACCENT, hover_color=ACCENT_HOV,
                       command=self._load_folder).pack(side="left")
-        self.status_lbl = ctk.CTkLabel(top_row, text="还没有选择文件夹",
+        ctk.CTkButton(top_row, text="📁 打开导出文件夹", height=34,
+                      fg_color="#1a6b4a", hover_color="#228b5e",
+                      command=self._open_folder).pack(side="left", padx=(8, 0))
+        self.status_lbl = ctk.CTkLabel(top_row, text="还没有选择文件夹（也可直接拖拽文件夹到左侧）",
                                         text_color=TEXT_GRAY, font=ctk.CTkFont(size=12))
         self.status_lbl.pack(side="left", padx=12)
 
@@ -75,15 +83,25 @@ class App(ctk.CTk):
         cols = ctk.CTkFrame(body, fg_color="transparent")
         cols.pack(fill="both", expand=True, pady=(0, 10))
 
-        left = ctk.CTkFrame(cols, fg_color=BG_CARD, corner_radius=10)
+        left = ctk.CTkFrame(cols, fg_color=BG_CARD, corner_radius=10,
+                             border_width=2, border_color=BORDER)
         left.pack(side="left", fill="both", expand=True, padx=(0, 8))
-        ctk.CTkLabel(left, text="原文件名", font=ctk.CTkFont(size=13, weight="bold"),
+        ctk.CTkLabel(left, text="原文件名（可直接拖拽文件夹到此区域）",
+                     font=ctk.CTkFont(size=13, weight="bold"),
                      text_color=TEXT_MAIN).pack(anchor="w", padx=10, pady=(10, 4))
         self.old_box = ctk.CTkTextbox(left, font=ctk.CTkFont(size=12),
                                        fg_color=BG_LIST, text_color=TEXT_MAIN,
                                        border_color=BORDER)
         self.old_box.pack(fill="both", expand=True, padx=8, pady=(0, 10))
         self.old_box.configure(state="disabled")
+
+        # 拖拽支持
+        if HAS_DND:
+            for w in (left, self.old_box):
+                w.drop_target_register(DND_FILES)
+                w.dnd_bind("<<Drop>>", self._on_drop)
+                w.dnd_bind("<<DragEnter>>", lambda e: left.configure(border_color=ACCENT_HOV))
+                w.dnd_bind("<<DragLeave>>", lambda e: left.configure(border_color=BORDER))
 
         right = ctk.CTkFrame(cols, fg_color=BG_CARD, corner_radius=10)
         right.pack(side="left", fill="both", expand=True, padx=(8, 0))
@@ -104,12 +122,41 @@ class App(ctk.CTk):
         self.result_lbl = ctk.CTkLabel(btn_row, text="", text_color=TEXT_GRAY,
                                         font=ctk.CTkFont(size=12))
         self.result_lbl.pack(side="left", padx=12)
+        ctk.CTkButton(btn_row, text="👁 预览对比", width=110, height=36,
+                      fg_color="#1a6b4a", hover_color="#228b5e",
+                      command=self._preview).pack(side="left", padx=8)
         ctk.CTkButton(btn_row, text="✅  执行重命名", height=36, width=160,
                       fg_color=ACCENT, hover_color=ACCENT_HOV,
                       font=ctk.CTkFont(size=14, weight="bold"),
                       command=self._execute).pack(side="right")
 
     # ── 逻辑 ────────────────────────────────────
+    def _on_drop(self, event):
+        raw = event.data
+        paths = re.findall(r'\{([^}]+)\}', raw)
+        paths += re.sub(r'\{[^}]+\}', '', raw).split()
+        for p in paths:
+            p = p.strip()
+            if p and Path(p).is_dir():
+                self._reload(p)
+                return
+        messagebox.showwarning("提示", "请拖拽一个文件夹（不是单个文件）！")
+
+    def _open_folder(self):
+        if not self._folder:
+            messagebox.showwarning("提示", "还没有加载任何文件夹！")
+            return
+        folder = self._folder
+        try:
+            if platform.system() == "Darwin":
+                subprocess.run(["open", folder])
+            elif platform.system() == "Windows":
+                os.startfile(folder)
+            else:
+                subprocess.run(["xdg-open", folder])
+        except Exception as e:
+            messagebox.showerror("错误", f"无法打开文件夹：{e}")
+
     def _load_folder(self):
         folder = filedialog.askdirectory(title="选择要重命名文件所在的文件夹")
         if not folder:
@@ -143,6 +190,38 @@ class App(ctk.CTk):
         self.status_lbl.configure(text="还没有选择文件夹")
         self.result_lbl.configure(text="")
 
+    def _preview(self):
+        if not self._files:
+            messagebox.showwarning("提示", "请先选择文件夹！")
+            return
+        raw = self.new_box.get("1.0", "end").strip()
+        new_names = [n.strip() for n in raw.split("\n") if n.strip()]
+
+        win = ctk.CTkToplevel(self)
+        win.title("预览对比")
+        win.geometry("700x500")
+        win.configure(fg_color=BG_MAIN)
+        win.lift()
+        win.focus()
+
+        status_text = "✅ 数量一致" if len(new_names) == len(self._files) else "⚠️ 数量不一致"
+        status_color = ACCENT if len(new_names) == len(self._files) else "#c0392b"
+        ctk.CTkLabel(win, text=f"原文件 {len(self._files)} 个 · 新名称 {len(new_names)} 个 · {status_text}",
+                     font=ctk.CTkFont(size=14, weight="bold"),
+                     text_color=status_color).pack(pady=(16, 8))
+
+        tb = ctk.CTkTextbox(win, font=ctk.CTkFont(family="Courier" if not IS_MAC else "Menlo", size=11),
+                             fg_color=BG_CARD, text_color=TEXT_MAIN)
+        tb.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+
+        max_len = max(len(self._files), len(new_names))
+        for i in range(max_len):
+            old_name = self._files[i].name if i < len(self._files) else "（无）"
+            new_name = new_names[i] if i < len(new_names) else "（无）"
+            mark = "" if i < len(self._files) and i < len(new_names) else " ⚠️"
+            tb.insert("end", f"{i+1:>3}. {old_name}\n     → {new_name}{mark}\n\n")
+        tb.configure(state="disabled")
+
     def _execute(self):
         if not self._files:
             messagebox.showwarning("提示", "请先选择文件夹！")
@@ -175,4 +254,3 @@ class App(ctk.CTk):
 if __name__ == "__main__":
     app = App()
     app.mainloop()
- 
