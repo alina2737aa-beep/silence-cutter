@@ -19,13 +19,15 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install customtkinter pyinstaller
+          pip install customtkinter tkinterdnd2 pyinstaller
 
       - name: Build EXE
         run: |
           pyinstaller --noconfirm --onedir --windowed --name "批量重命名工具" `
             --add-data "$((python -c 'import customtkinter,os;print(os.path.dirname(customtkinter.__file__))'));customtkinter" `
+            --add-data "$((python -c 'import tkinterdnd2,os;print(os.path.dirname(tkinterdnd2.__file__))'));tkinterdnd2" `
             --hidden-import customtkinter `
+            --hidden-import tkinterdnd2 `
             rename_app.py
 
       - name: Upload EXE
