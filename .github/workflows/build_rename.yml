@@ -1,0 +1,35 @@
+name: Build Rename Tool Windows EXE
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'rename_app.py'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install customtkinter pyinstaller
+
+      - name: Build EXE
+        run: |
+          pyinstaller --noconfirm --onedir --windowed --name "批量重命名工具" `
+            --add-data "$((python -c 'import customtkinter,os;print(os.path.dirname(customtkinter.__file__))'));customtkinter" `
+            --hidden-import customtkinter `
+            rename_app.py
+
+      - name: Upload EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: 批量重命名工具-Windows
+          path: dist/批量重命名工具/
